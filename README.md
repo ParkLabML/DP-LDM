@@ -1,6 +1,9 @@
+
+
 # Enviroment :
 - `conda env create -f environment.yaml`
-- `conda activate dp-ldm`
+- `conda activate ldm`
+- **Important**: We strongly recommend using the [Mamba](https://www.anaconda.com/blog/a-faster-conda-for-a-growing-community) solver for Conda as it dramatically speeds up environment creation.
 
 # Prepare model checkpoints :
 - download the pretrained models (we will update this soon)
@@ -21,7 +24,7 @@ CUDA_VISIBLE_DEVICES=0 python main.py --base <path to dm yaml> -t --gpus 0,
 
 # Fine Tune with differential privacy constraints (step 3) :
 ```
-CUDA_VISIBLE_DEVICES=0 python main.py --base <path to fine-tune yaml> -t --gpus 0,
+CUDA_VISIBLE_DEVICES=0 python main.py --base <path to fine-tune yaml> -t --gpus 0, --accelerator gpu
 ```
 
 # Sampling (step 4) :
