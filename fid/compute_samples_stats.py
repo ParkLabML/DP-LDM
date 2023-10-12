@@ -1,7 +1,7 @@
 """
-This script computes the mean and covariance of the InceptionV3 activations on a
-given dataset. A separate script should be used for computing the same
-statistics on generated samples. To compute the FID, these stats can be combined
+This script computes the mean and covariance of the InceptionV3 activations on
+generated samples. A separate script should be used for computing the same
+statistics on the real dataset. To compute the FID, these stats can be combined
 using a third script.
 """
 import argparse
@@ -25,9 +25,7 @@ class DatasetWrapper(Dataset):
         image = self.images[i]
         assert image.shape[0] == 3 and image.shape[1] == image.shape[2], \
                f"Samples not in CxHxW format, instead got {image.shape}"
-
-        image = image / 2 + 0.5
-        image = image.clamp(min=0, max=1)
+        image = image.clamp(min=-1, max=1)
         return image
 
 
@@ -38,7 +36,7 @@ def main(args):
     dataset = DatasetWrapper(images)
     dataloader = DataLoader(dataset=dataset, batch_size=args.batch_size)
 
-    inception_model = InceptionV3().to(device)
+    inception_model = InceptionV3(normalize_input=False).to(device)
     mu, sigma = stats_from_dataloader(dataloader, inception_model, device)
 
     if args.output:
@@ -47,13 +45,13 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser('')
-    parser.add_argument('--batch_size', type=int, default=500, help='batch size per GPU')
+    parser.add_argument('--batch_size', type=int, default=500, help='Number of samples per batch')
     parser.add_argument('--samples', type=str, help='Path to samples class')
     parser.add_argument('--output', type=str, help='Path to output fid stats (.npz)')
     args = parser.parse_args()
 
     if not args.output:
-        print("--output not provided, generated stats will not be saved")
+        print("[WARN]: --output not provided, generated stats will not be saved")
 
     set_seeds(0, 0)
 

@@ -34,9 +34,13 @@ def main(args):
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
     dataset_config = OmegaConf.create({"target": args.dataset})
-    if args.data_size:
-        OmegaConf.update(dataset_config, "params.size", args.data_size)
-        OmegaConf.update(dataset_config, "params.split", "train")
+    for arg in args.args:
+        key, value = arg.split(':')
+        try:
+            value = int(value)
+        except ValueError:
+            pass
+        OmegaConf.update(dataset_config, "params." + key, value)
     dataset = instantiate_from_config(dataset_config)
     dataset = DatasetWrapper(dataset)
     dataloader = DataLoader(dataset=dataset, batch_size=args.batch_size)
@@ -50,14 +54,14 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser('')
-    parser.add_argument('--batch_size', type=int, default=500, help='batch size per GPU')
+    parser.add_argument('--batch_size', type=int, default=500, help='Number of samples per batch')
     parser.add_argument('--dataset', type=str, help='Path to dataset class')
-    parser.add_argument('--data_size', type=int, help='Size of images')
+    parser.add_argument('--args', nargs='*', default=[], help='Additional dataset constructor arguments (param:value)')
     parser.add_argument('--output', type=str, help='Path to output FID stats (.npz)')
     args = parser.parse_args()
 
     if not args.output:
-        print("--output not provided, generated stats will not be saved")
+        print("[WARN]: --output not provided, generated stats will not be saved")
 
     set_seeds(0, 0)
 
