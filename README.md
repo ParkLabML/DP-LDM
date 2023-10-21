@@ -13,30 +13,6 @@ conda env create -f environment.yaml
 conda activate ldm
 ```
 
-# Pretrained Model Checkpoints:
-
-**Under Construction**
-
-We provide checkpoints of our models with hyperparameters presented in the paper. These checkpoints can be used as-is, or used for pretraining/finetuning your own LDMs. Instructions for how to train your own models is presented below.
-
-## Pretrained Autoencoders (non-private)
-
-| Model | Link |
-|-------|------|
-|       |      |
-
-## Pretrained LDMs (non-private)
-
-| Model | Link |
-|-------|------|
-|       |      |
-
-## Fine-tuned LDMs (private)
-
-| Model | Link |
-|-------|------|
-|       |      |
-
 # Training Your Own Models
 
 Once you have chosen a public/private dataset pair, there are three steps to training your own differentially private latent diffusion models. In each step, you will need to create a configuration file that specifies the hyperparameter of each model. Example config files can be found in `DP-LDM/configs/`.
