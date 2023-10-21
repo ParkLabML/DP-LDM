@@ -47,7 +47,7 @@ model:
       params:
         embed_dim: 3
         monitor: "val/rec_loss"
-        ckpt_path: "logs/2023-09-05T15-06-56_emnist_autoencoder_kl_4x4x3/checkpoints/epoch=000047.ckpt"
+        ckpt_path: 'path\to\pretrained\autoencoder.ckpt'
         ddconfig:
           double_z: True
           z_channels: 3
