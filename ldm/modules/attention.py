@@ -7,6 +7,8 @@ from einops import rearrange, repeat
 
 from ldm.modules.diffusionmodules.util import checkpoint
 
+import loralib as lora
+
 
 def exists(val):
     return val is not None
@@ -78,12 +80,17 @@ def Normalize(in_channels):
 
 
 class LinearAttention(nn.Module):
-    def __init__(self, dim, heads=4, dim_head=32):
+    def __init__(self, dim, heads=4, dim_head=32, lora_rank=None):
         super().__init__()
         self.heads = heads
         hidden_dim = dim_head * heads
-        self.to_qkv = nn.Conv2d(dim, hidden_dim * 3, 1, bias = False)
-        self.to_out = nn.Conv2d(hidden_dim, dim, 1)
+
+        if lora_rank is not None:
+            self.to_qkv = lora.Conv2d(dim, hidden_dim * 3, 1, bias=False, r=lora_rank)
+            self.to_out = lora.Conv2d(hidden_dim, dim, 1, r=lora_rank)
+        else:
+            self.to_qkv = nn.Conv2d(dim, hidden_dim * 3, 1, bias=False)
+            self.to_out = nn.Conv2d(hidden_dim, dim, 1)
 
     def forward(self, x):
         b, c, h, w = x.shape
@@ -97,31 +104,22 @@ class LinearAttention(nn.Module):
 
 
 class SpatialSelfAttention(nn.Module):
-    def __init__(self, in_channels):
+    def __init__(self, in_channels, lora_rank=None):
         super().__init__()
         self.in_channels = in_channels
 
         self.norm = Normalize(in_channels)
-        self.q = torch.nn.Conv2d(in_channels,
-                                 in_channels,
-                                 kernel_size=1,
-                                 stride=1,
-                                 padding=0)
-        self.k = torch.nn.Conv2d(in_channels,
-                                 in_channels,
-                                 kernel_size=1,
-                                 stride=1,
-                                 padding=0)
-        self.v = torch.nn.Conv2d(in_channels,
-                                 in_channels,
-                                 kernel_size=1,
-                                 stride=1,
-                                 padding=0)
-        self.proj_out = torch.nn.Conv2d(in_channels,
-                                        in_channels,
-                                        kernel_size=1,
-                                        stride=1,
-                                        padding=0)
+
+        if lora_rank is not None:
+            self.q = lora.Conv2d(in_channels, in_channels, kernel_size=1, stride=1, padding=0, r=lora_rank)
+            self.k = lora.Conv2d(in_channels, in_channels, kernel_size=1, stride=1, padding=0, r=lora_rank)
+            self.v = lora.Conv2d(in_channels, in_channels, kernel_size=1, stride=1, padding=0, r=lora_rank)
+            self.proj_out = lora.Conv2d(in_channels, in_channels, kernel_size=1, stride=1, padding=0, r=lora_rank)
+        else:
+            self.q = nn.Conv2d(in_channels, in_channels, kernel_size=1, stride=1, padding=0)
+            self.k = nn.Conv2d(in_channels, in_channels, kernel_size=1, stride=1, padding=0)
+            self.v = nn.Conv2d(in_channels, in_channels, kernel_size=1, stride=1, padding=0)
+            self.proj_out = nn.Conv2d(in_channels, in_channels, kernel_size=1, stride=1, padding=0)
 
     def forward(self, x):
         h_ = x
@@ -150,7 +148,7 @@ class SpatialSelfAttention(nn.Module):
 
 
 class CrossAttention(nn.Module):
-    def __init__(self, query_dim, context_dim=None, heads=8, dim_head=64, dropout=0.):
+    def __init__(self, query_dim, context_dim=None, heads=8, dim_head=64, dropout=0., lora_rank=None):
         super().__init__()
         inner_dim = dim_head * heads
         context_dim = default(context_dim, query_dim)
@@ -158,14 +156,16 @@ class CrossAttention(nn.Module):
         self.scale = dim_head ** -0.5
         self.heads = heads
 
-        self.to_q = nn.Linear(query_dim, inner_dim, bias=False)
-        self.to_k = nn.Linear(context_dim, inner_dim, bias=False)
-        self.to_v = nn.Linear(context_dim, inner_dim, bias=False)
-
-        self.to_out = nn.Sequential(
-            nn.Linear(inner_dim, query_dim),
-            nn.Dropout(dropout)
-        )
+        if lora_rank is not None:
+            self.to_q = lora.Linear(query_dim, inner_dim, bias=False, r=lora_rank)
+            self.to_k = lora.Linear(context_dim, inner_dim, bias=False, r=lora_rank)
+            self.to_v = lora.Linear(context_dim, inner_dim, bias=False, r=lora_rank)
+            self.to_out = nn.Sequential(lora.Linear(inner_dim, query_dim, r=lora_rank), nn.Dropout(dropout))
+        else:
+            self.to_q = nn.Linear(query_dim, inner_dim, bias=False)
+            self.to_k = nn.Linear(context_dim, inner_dim, bias=False)
+            self.to_v = nn.Linear(context_dim, inner_dim, bias=False)
+            self.to_out = nn.Sequential(nn.Linear(inner_dim, query_dim), nn.Dropout(dropout))
 
     def forward(self, x, context=None, mask=None):
         h = self.heads
@@ -194,12 +194,15 @@ class CrossAttention(nn.Module):
 
 
 class BasicTransformerBlock(nn.Module):
-    def __init__(self, dim, n_heads, d_head, dropout=0., context_dim=None, gated_ff=True, checkpoint=True):
+    def __init__(self, dim, n_heads, d_head, dropout=0., context_dim=None,
+                 gated_ff=True, checkpoint=True, lora_rank=None):
         super().__init__()
-        self.attn1 = CrossAttention(query_dim=dim, heads=n_heads, dim_head=d_head, dropout=dropout)  # is a self-attention
+        self.attn1 = CrossAttention(query_dim=dim, heads=n_heads, dim_head=d_head,
+                                    dropout=dropout, lora_rank=lora_rank)  # is a self-attention
         self.ff = FeedForward(dim, dropout=dropout, glu=gated_ff)
         self.attn2 = CrossAttention(query_dim=dim, context_dim=context_dim,
-                                    heads=n_heads, dim_head=d_head, dropout=dropout)  # is self-attn if context is none
+                                    heads=n_heads, dim_head=d_head, dropout=dropout,
+                                    lora_rank=lora_rank)  # is self-attn if context is none
         self.norm1 = nn.LayerNorm(dim)
         self.norm2 = nn.LayerNorm(dim)
         self.norm3 = nn.LayerNorm(dim)
@@ -224,23 +227,30 @@ class SpatialTransformer(nn.Module):
     Finally, reshape to image
     """
     def __init__(self, in_channels, n_heads, d_head,
-                 depth=1, dropout=0., context_dim=None):
+                 depth=1, dropout=0., context_dim=None, lora_rank=None):
         super().__init__()
         self.in_channels = in_channels
         inner_dim = n_heads * d_head
         self.norm = Normalize(in_channels)
 
+        self.lora_rank = lora_rank
         self.proj_in = nn.Conv2d(in_channels,
                                  inner_dim,
                                  kernel_size=1,
                                  stride=1,
                                  padding=0)
 
-        self.transformer_blocks = nn.ModuleList(
-            [BasicTransformerBlock(inner_dim, n_heads, d_head, dropout=dropout, context_dim=context_dim)
-                for d in range(depth)]
-        )
-
+        self.transformer_blocks = nn.ModuleList([
+            BasicTransformerBlock(
+                inner_dim,
+                n_heads,
+                d_head,
+                dropout=dropout,
+                context_dim=context_dim,
+                lora_rank=lora_rank
+            ) for _ in range(depth)
+        ])
+        
         self.proj_out = zero_module(nn.Conv2d(inner_dim,
                                               in_channels,
                                               kernel_size=1,

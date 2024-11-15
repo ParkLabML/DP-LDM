@@ -17,6 +17,8 @@ from einops import repeat
 
 from ldm.util import instantiate_from_config
 
+import loralib as lora
+
 
 def make_beta_schedule(schedule, n_timestep, linear_start=1e-4, linear_end=2e-2, cosine_s=8e-3):
     if schedule == "linear":
@@ -215,16 +217,25 @@ class GroupNorm32(nn.GroupNorm):
     def forward(self, x):
         return super().forward(x.float()).type(x.dtype)
 
-def conv_nd(dims, *args, **kwargs):
+
+def conv_nd(dims, *args, lora_rank=None, **kwargs):
     """
     Create a 1D, 2D, or 3D convolution module.
     """
-    if dims == 1:
-        return nn.Conv1d(*args, **kwargs)
-    elif dims == 2:
-        return nn.Conv2d(*args, **kwargs)
-    elif dims == 3:
-        return nn.Conv3d(*args, **kwargs)
+    if lora_rank is not None:
+        if dims == 1:
+            return lora.Conv1d(*args, **kwargs, r=lora_rank)
+        elif dims == 2:
+            return lora.Conv2d(*args, **kwargs, r=lora_rank)
+        elif dims == 3:
+            return lora.Conv3d(*args, **kwargs, r=lora_rank)
+    else:
+        if dims == 1:
+            return nn.Conv1d(*args, **kwargs)
+        elif dims == 2:
+            return nn.Conv2d(*args, **kwargs)
+        elif dims == 3:
+            return nn.Conv3d(*args, **kwargs)
     raise ValueError(f"unsupported dimensions: {dims}")
 
 

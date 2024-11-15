@@ -19,6 +19,7 @@ def log_txt_as_img(wh, xc, size=10):
     # xc a list of captions to plot
     txts = list()
     for c in xc:
+        if isinstance(c, torch.Tensor) and c.numel() == 1: c = c.item()
         caption = str(c)
         txt = Image.new("RGB", wh, color="white")
         draw = ImageDraw.Draw(txt)

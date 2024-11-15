@@ -289,6 +289,7 @@ class AttentionBlock(nn.Module):
         num_head_channels=-1,
         use_checkpoint=False,
         use_new_attention_order=False,
+        lora_rank=None,
     ):
         super().__init__()
         self.channels = channels
@@ -301,7 +302,7 @@ class AttentionBlock(nn.Module):
             self.num_heads = channels // num_head_channels
         self.use_checkpoint = use_checkpoint
         self.norm = normalization(channels)
-        self.qkv = conv_nd(1, channels, channels * 3, 1)
+        self.qkv = conv_nd(1, channels, channels * 3, 1, lora_rank=lora_rank)
         if use_new_attention_order:
             # split qkv before split heads
             self.attention = QKVAttention(self.num_heads)
@@ -309,7 +310,10 @@ class AttentionBlock(nn.Module):
             # split heads before split qkv
             self.attention = QKVAttentionLegacy(self.num_heads)
 
-        self.proj_out = zero_module(conv_nd(1, channels, channels, 1))
+        if lora_rank:
+            self.proj_out = conv_nd(1, channels, channels, 1, lora_rank=lora_rank)
+        else:
+            self.proj_out = zero_module(conv_nd(1, channels, channels, 1))
 
     def forward(self, x):
         return checkpoint(self._forward, (x,), self.parameters(), True)   # TODO: check checkpoint usage, is True # TODO: fix the .half call!!!
@@ -466,6 +470,7 @@ class UNetModel(nn.Module):
         context_dim=None,                 # custom transformer support
         n_embed=None,                     # custom support for prediction of discrete ids into codebook of first stage vq model
         legacy=True,
+        lora_rank=None,
     ):
         super().__init__()
         if use_spatial_transformer:
@@ -502,6 +507,7 @@ class UNetModel(nn.Module):
         self.num_head_channels = num_head_channels
         self.num_heads_upsample = num_heads_upsample
         self.predict_codebook_ids = n_embed is not None
+        self.lora_rank = lora_rank
 
         time_embed_dim = model_channels * 4
         self.time_embed = nn.Sequential(
@@ -554,8 +560,9 @@ class UNetModel(nn.Module):
                             num_heads=num_heads,
                             num_head_channels=dim_head,
                             use_new_attention_order=use_new_attention_order,
+                            lora_rank=lora_rank,
                         ) if not use_spatial_transformer else SpatialTransformer(
-                            ch, num_heads, dim_head, depth=transformer_depth, context_dim=context_dim
+                            ch, num_heads, dim_head, depth=transformer_depth, context_dim=context_dim, lora_rank=lora_rank
                         )
                     )
                 self.input_blocks.append(TimestepEmbedSequential(*layers))
@@ -609,9 +616,10 @@ class UNetModel(nn.Module):
                 num_heads=num_heads,
                 num_head_channels=dim_head,
                 use_new_attention_order=use_new_attention_order,
+                lora_rank=lora_rank,
             ) if not use_spatial_transformer else SpatialTransformer(
-                            ch, num_heads, dim_head, depth=transformer_depth, context_dim=context_dim
-                        ),
+                ch, num_heads, dim_head, depth=transformer_depth, context_dim=context_dim, lora_rank=lora_rank
+            ),
             ResBlock(
                 ch,
                 time_embed_dim,
@@ -655,8 +663,9 @@ class UNetModel(nn.Module):
                             num_heads=num_heads_upsample,
                             num_head_channels=dim_head,
                             use_new_attention_order=use_new_attention_order,
+                            lora_rank=lora_rank,
                         ) if not use_spatial_transformer else SpatialTransformer(
-                            ch, num_heads, dim_head, depth=transformer_depth, context_dim=context_dim
+                            ch, num_heads, dim_head, depth=transformer_depth, context_dim=context_dim, lora_rank=lora_rank
                         )
                     )
                 if level and i == num_res_blocks:

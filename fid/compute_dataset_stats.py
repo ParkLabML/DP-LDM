@@ -43,7 +43,7 @@ def main(args):
         OmegaConf.update(dataset_config, "params." + key, value)
     dataset = instantiate_from_config(dataset_config)
     dataset = DatasetWrapper(dataset)
-    dataloader = DataLoader(dataset=dataset, batch_size=args.batch_size)
+    dataloader = DataLoader(dataset=dataset, batch_size=args.batch_size, num_workers=args.num_workers)
 
     inception_model = InceptionV3(normalize_input=False).to(device)
     mu, sigma = stats_from_dataloader(dataloader, inception_model, device)
@@ -58,6 +58,7 @@ if __name__ == "__main__":
     parser.add_argument('--dataset', type=str, help='Path to dataset class')
     parser.add_argument('--args', nargs='*', default=[], help='Additional dataset constructor arguments (param:value)')
     parser.add_argument('--output', type=str, help='Path to output FID stats (.npz)')
+    parser.add_argument('--num_workers', type=int, default=0, help="Number of dataloader workers")
     args = parser.parse_args()
 
     if not args.output:

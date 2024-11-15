@@ -1,9 +1,9 @@
 import argparse
+import ast
 import random
 
 import numpy as np
 from omegaconf import OmegaConf
-from omegaconf.errors import ConfigAttributeError
 import torch
 from torchvision.utils import save_image
 
@@ -26,7 +26,7 @@ def load_model_from_config(config, ckpt):
     try:
         config.model.params.ignore_keys = []
         config.model.params.ckpt_path = None
-    except ConfigAttributeError:
+    except:
         pass
     model = instantiate_from_config(config.model)
     model.load_state_dict(sd, strict=False)
@@ -114,10 +114,10 @@ if __name__ == "__main__":
     parser.add_argument("--output", type=str, required=True, help="Path to output file (.pt|.png)")
     parser.add_argument("--seed", type=int, default=0, help="Random seed")
     parser.add_argument("--num_samples", type=int, default=20, help="Total number of samples to generate")
-    parser.add_argument("--batch_size", type=int, default=500, help="Number of samples to generate per batch")
-    parser.add_argument("--decoder_batch_size", type=int, default=None, help="Number of samples to decode per batch")
+    parser.add_argument("--batch_size", type=int, default=500, help="Number of samples to generate per minibatch")
+    parser.add_argument("--decoder_batch_size", type=int, default=None, help="Number of samples to decode per minibatch")
     grp_cond = parser.add_argument_group("Conditional Generation")
-    grp_cond.add_argument("--classes", type=int, nargs="+", default=[0], help="Classes to generate samples for")
+    grp_cond.add_argument("--classes", type=str, default="[0]", help="Classes to generate samples for")
     grp_cond.add_argument("--prompt", type=str, nargs="?", default=None, help="A prompt to generate samples for")
     grp_cond.add_argument("--uc", type=int, default=None, help="Class to use for unconditional guidance")
     grp_cond.add_argument("--uc_scale", type=float, default=None, help="Unconditional guidance scale")
@@ -125,6 +125,6 @@ if __name__ == "__main__":
     grp_ddim.add_argument("--ddim_steps", type=int, default=200, help="number of steps for ddim sampling")
     grp_ddim.add_argument("--eta", type=float, default=1.0, help="eta for ddim sampling")
     args = parser.parse_args()
-
+    args.classes = ast.literal_eval(args.classes)
     with torch.no_grad():
         main(args)

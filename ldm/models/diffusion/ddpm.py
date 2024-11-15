@@ -19,7 +19,7 @@ from ldm.util import default, instantiate_from_config, isimage, ismap, log_txt_a
 
 # Transdiff
 import copy
-from ldm.modules.attention import SpatialTransformer
+from ldm.modules.attention import BasicTransformerBlock, SpatialTransformer
 from ldm.modules.diffusionmodules.openaimodel import AttentionBlock, ResBlock
 
 # Differential Privacy
@@ -27,6 +27,8 @@ import opacus
 from ldm.privacy.myopacus import MyBatchSplittingSampler
 from ldm.privacy.privacy_analysis import compute_noise_multiplier, get_noisysgd_mechanism
 import gc
+
+import loralib as lora
 
 
 __conditioning_keys__ = {'concat': 'c_concat',
@@ -84,6 +86,7 @@ class LatentDiffusion(DDPM):
                  train_resblocks_only=False,
                  ablation_blocks=-1,
                  dp_config=None,
+                 use_lora=False,
                  *args, **kwargs):
         self.num_timesteps_cond = default(num_timesteps_cond, 1)
         self.scale_by_std = scale_by_std
@@ -135,6 +138,8 @@ class LatentDiffusion(DDPM):
         self.dp_config = dp_config
         if dp_config and dp_config.enabled:
             self.privacy_engine = opacus.PrivacyEngine()
+
+        self.use_lora = use_lora
 
     def init_attention(self, attention_flag='spatial'):
         ignore_keys = []
@@ -371,7 +376,9 @@ class LatentDiffusion(DDPM):
                 cond_key = self.cond_stage_key
             if cond_key != self.first_stage_key:
                 if cond_key in ['caption', 'coordinates_bbox']:
+                    # breakpoint()
                     xc = batch[cond_key]
+                    # xc = batch
                 elif cond_key == 'class_label':
                     xc = batch
                 else:
@@ -738,6 +745,7 @@ class LatentDiffusion(DDPM):
         loss_simple = self.get_loss(model_output, target, mean=False).mean([1, 2, 3])
         loss_dict.update({f'{prefix}/loss_simple': loss_simple.mean()})
 
+        # logvar_t = self.logvar[t].to(self.device)
         logvar_t = self.logvar[t.cpu()].to(self.device)
         loss = loss_simple / torch.exp(logvar_t) + logvar_t
         # loss = loss_simple / torch.exp(self.logvar) + self.logvar
@@ -752,7 +760,7 @@ class LatentDiffusion(DDPM):
         loss_dict.update({f'{prefix}/loss_vlb': loss_vlb})
         loss += (self.original_elbo_weight * loss_vlb)
         loss_dict.update({f'{prefix}/loss': loss})
-
+        gc.collect()
         return loss, loss_dict
 
     def p_mean_variance(self, x, c, t, clip_denoised: bool, return_codebook_ids=False, quantize_denoised=False,
@@ -955,6 +963,9 @@ class LatentDiffusion(DDPM):
             shape = (self.channels, self.image_size, self.image_size)
             samples, intermediates = ddim_sampler.sample(ddim_steps, batch_size,
                                                          shape, cond, verbose=False, **kwargs)
+            # print("enter ddim")
+            # print("cond is : ", cond)
+            # breakpoint()
 
         else:
             samples, intermediates = self.sample(cond=cond, batch_size=batch_size,
@@ -974,6 +985,7 @@ class LatentDiffusion(DDPM):
                                            force_c_encode=True,
                                            return_original_cond=True,
                                            bs=N)
+        # breakpoint()
         N = min(x.shape[0], N)
         n_row = min(x.shape[0], n_row)
         log["inputs"] = x
@@ -1016,6 +1028,7 @@ class LatentDiffusion(DDPM):
             with self.ema_scope("Plotting"):
                 samples, z_denoise_row = self.sample_log(cond=c, batch_size=N, ddim=use_ddim,
                                                          ddim_steps=ddim_steps, eta=ddim_eta)
+                # samples, z_denoise_row = self.sample(cond=c, batch_size=N, return_intermediates=True)
             x_samples = self.decode_first_stage(samples)
             log["samples"] = x_samples
             if plot_denoise_rows:
@@ -1029,6 +1042,8 @@ class LatentDiffusion(DDPM):
                     samples, z_denoise_row = self.sample_log(cond=c, batch_size=N, ddim=use_ddim,
                                                              ddim_steps=ddim_steps, eta=ddim_eta,
                                                              quantize_denoised=True)
+                    # samples, z_denoise_row = self.sample(cond=c, batch_size=N, return_intermediates=True,
+                    #                                      quantize_denoised=True)
                 x_samples = self.decode_first_stage(samples.to(self.device))
                 log["samples_x0_quantized"] = x_samples
 
@@ -1140,6 +1155,22 @@ class LatentDiffusion(DDPM):
                 params.extend(block.parameters())
             if self.cond_stage_model:
                 print(" and cond_stage_model", end="")
+                self.cond_stage_model.requires_grad_(True)
+                params.extend(self.cond_stage_model.parameters())
+            print()
+        elif self.use_lora:
+            print("Training UNet with LoRA")
+            self.model.requires_grad_(True)
+            lora.mark_only_lora_as_trainable(self.model)
+            params = list(p for p in self.model.parameters() if p.requires_grad)
+            # NOTE: AttentionBlock, BasicTransformerBlock, (and sometimes ResBlock) use a "checkpoint" feature which
+            #       manually computes gradients in the backward pass. This breaks when the tensors in these modules
+            #       are set to `requires_grad=False`, so we set them to True here.
+            for m in self.model.modules():
+                if isinstance(m, AttentionBlock) or isinstance(m, BasicTransformerBlock):
+                    m.requires_grad_(True)
+            if self.cond_stage_model:
+                print(" and cond_stage_model normally", end="")
                 self.cond_stage_model.requires_grad_(True)
                 params.extend(self.cond_stage_model.parameters())
             print()
