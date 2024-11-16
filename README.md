@@ -1,6 +1,6 @@
 # Differentially Private Latent Diffusion Models
 
-This repository contains an implementation of the methods described in [Differentially Private Latent Diffusion Models](https://openreview.net/pdf?id=FLOxzCa6DS). The code is based off a public implementation of Latent Diffusion Models, available [here](https://github.com/CompVis/latent-diffusion) (commit `a506df5`).
+This repository contains an implementation of the methods described in [Differentially Private Latent Diffusion Models](https://openreview.net/forum?id=AkdQ266kHj). The code is based off a public implementation of Latent Diffusion Models, available [here](https://github.com/CompVis/latent-diffusion) (commit `a506df5`).
 
 # Setting Up Your Enviroment:
 This project uses Conda as its package management tool which can downloaded [here](https://docs.conda.io/en/latest/). Once installed, clone the repository. The remainder of this document will assume the project is stored in a directory called `DP-LDM`.
